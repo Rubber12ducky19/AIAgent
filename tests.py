@@ -12,7 +12,7 @@ from functions.run_python import run_python_file
 #write_file("calculator", "pkg/morelorem.txt", "lorem ipsum dolor sit amet")
 #write_file("calculator", "/tmp/temp.txt", "this should not be allowed")
 
-run_python_file("calculator", "main.py")
-run_python_file("calculator", "tests.py")
-run_python_file("calculator", "../main.py")
-run_python_file("calculator", "nonexistent.py")
+print(run_python_file("calculator", "main.py"))
+print(run_python_file("calculator", "tests.py"))
+print(run_python_file("calculator", "../main.py"))
+print(run_python_file("calculator", "nonexistent.py"))

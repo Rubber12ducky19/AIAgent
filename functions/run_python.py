@@ -26,12 +26,15 @@ def run_python_file(working_directory, file_path):
     except Exception as e:
         return f"Error: executing Python file: {e}"
     
+    error_txt = ""
+    result_txt = f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
+
     if result.returncode != 0:
-        return f"Process exited with code {result.returncode}"
+        error_txt += f"Process exited with code {result.returncode}"
     if result.stdout == "": 
         if result.stderr == "":
-            return f"No output produced."
-
-    return f"STDOUT: {result.stdout}\nSTDERR:{result.stderr}"
+            return "No output produced."
+    
+    return result_txt + error_txt
 
     
