@@ -3,6 +3,12 @@ import sys
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+import argparse
+
+from functions.get_file_content import get_file_content
+from functions.get_files_info import get_files_info
+from functions.run_python import run_python_file
+from functions.write_file import write_file
 
 load_dotenv()
 api_key = os.environ.get("GEMINI_API_KEY")
@@ -85,6 +91,44 @@ available_functions = types.Tool(
     ]
 )
 
+function_dict = {
+    "get_file_content": get_file_content,
+    "get_files_info": get_files_info,
+    "run_python_file": run_python_file,
+    "write_file": write_file
+}
+
+parser = argparse.ArgumentParser()
+parser.add_argument("prompt", type=str, help= "The user's prompt to the AI agent")
+parser.add_argument("--verbose", action="store_true", help= "Enables verbose output.")
+args= parser.parse_args()
+
+def call_function(function_call_part, verbose=False):
+    if verbose == True:
+        print(f"Calling function: {function_call_part.name}({function_call_part.args})")
+    else:
+        print(f" - Calling function: {function_call_part.name}")
+    
+    if function_call_part.name not in function_dict:
+        return types.Content(
+            role="tool",
+            parts=[
+                types.Part.from_function_response(
+                    name=function_call_part.name,
+                    response={"error": f"Unknown function: {function_call_part.name}"}
+                )
+            ]
+        )
+    working_dir_arg = {"working_directory":"./calculator"}
+    function_args = {**working_dir_arg, **function_call_part.args}
+    function_result = function_dict[function_call_part.name](**function_args)
+    return types.Content(
+        role="tool",
+        parts=[types.Part.from_function_response(
+            name=function_call_part.name,
+            response={"result":function_result},
+        )]
+    )
 
 if len(user_prompt) > 1:
     response = client.models.generate_content(
@@ -96,13 +140,21 @@ if len(user_prompt) > 1:
     
     
     if response.function_calls:
-        #If the list is NOT empty
-        print(f"Calling function: {response.function_calls[0].name}({response.function_calls[0].args})")
+        function_call_result = call_function(response.function_calls[0],args.verbose)
+        try:
+            response_dict = function_call_result.parts[0].function_response.response
+            if args.verbose:
+                print(f" -> {response_dict}")
+        except (AttributeError, IndexError) as e:
+            raise Exception("Fatal: Function response structure is invalid.") from e
+    
+       
+        
     else:
         #If the list IS empty
         print(response.text)
     if "--verbose" in user_prompt:
-        print(f"User prompt: {user_prompt[1]}")
+        print(f"User prompt: {args.prompt}")
         print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
         print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
     
