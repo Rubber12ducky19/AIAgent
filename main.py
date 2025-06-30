@@ -17,15 +17,11 @@ user_prompt = sys.argv
 messages = [types.Content(role="user", parts=[types.Part(text=user_prompt[1])]),]
 
 
-system_prompt ="""
-You are a helpful AI coding agent.
+system_prompt = """You are a helpful assistant that can analyze code projects using the available tools.
 
-When a user asks a question or makes a request, make a function call plan. You can perform the following operations:
+IMPORTANT: After using tools to gather information, you MUST provide a comprehensive response that directly answers the user's question. Do not return empty responses.
 
-- List files and directories
-
-All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
-"""
+When you have gathered sufficient information from the tools, summarize your findings clearly and helpfully."""
 model_name = "gemini-2.0-flash-001"
 
 schema_get_files_info = types.FunctionDeclaration(
@@ -111,7 +107,7 @@ def call_function(function_call_part, verbose=False):
     
     if function_call_part.name not in function_dict:
         return types.Content(
-            role="tool",
+            role="model",
             parts=[
                 types.Part.from_function_response(
                     name=function_call_part.name,
@@ -130,34 +126,86 @@ def call_function(function_call_part, verbose=False):
         )]
     )
 
-if len(user_prompt) > 1:
+max_iterations = 20
+iteration_count = 0
+while iteration_count < max_iterations:
+    #Generate content with current messages
     response = client.models.generate_content(
         model=model_name,
         contents=messages,
         config=types.GenerateContentConfig(
             tools=[available_functions],
             system_instruction=system_prompt))
-    
-    
+    #Add the LLM's response to your messages
+    for candidate in response.candidates:
+        messages.append(candidate.content)       
+    #Check if functions were called
     if response.function_calls:
-        function_call_result = call_function(response.function_calls[0],args.verbose)
-        try:
-            response_dict = function_call_result.parts[0].function_response.response
-            if args.verbose:
-                print(f" -> {response_dict}")
-        except (AttributeError, IndexError) as e:
-            raise Exception("Fatal: Function response structure is invalid.") from e
+        if args.verbose:
+            print(f"Number of function calls: {len(response.function_calls)}")
+        # Execute ALL function calls, not just the first one
+        for function_call in response.function_calls:
+            try:
+                function_call_result = call_function(response.function_calls[0],args.verbose)
+                #Add the results to messages
+                messages.append(function_call_result)
+            except Exception as e:
+            #Handle function call errors
+                error_message = f"Error calling function: {e}"
+                if args.verbose:
+                    print(f"Function call failed: {e}")
+                #Add error message to the conversation so LLM knows function call failed
+                error_content = types.Content(
+                    role="model",
+                    parts=[types.Part(text=error_message)]
+                )
+                messages.append(error_content)
+    else:
+        #if no functions called: print final response and break
+        if response.text and response.text.strip():
+            print("Final response:")
+            print (response.text)
+        else:
+            print("Agent completed but provided no final response.")
+        if args.verbose:
+            print(f"Response text: {response.text}")
+            print (f"Response candidates: {len(response.candidates)}")
+            if response.candidates:
+                print(f"First Candidate parts: {response.candidates[0].content.parts}")
+            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        break
+    if args.verbose:
+        print(f"Iteration Count: {iteration_count +1}")
+    iteration_count += 1
+#if len(user_prompt) > 1:
+    #response = client.models.generate_content(
+        #model=model_name,
+        #contents=messages,
+        #config=types.GenerateContentConfig(
+            #tools=[available_functions],
+            #system_instruction=system_prompt))
+    
+    
+    #if response.function_calls:
+        #function_call_result = call_function(response.function_calls[0],args.verbose)
+        #try:
+            #response_dict = function_call_result.parts[0].function_response.response
+            #if args.verbose:
+                #print(f" -> {response_dict}")
+        #except (AttributeError, IndexError) as e:
+            #raise Exception("Fatal: Function response structure is invalid.") from e
     
        
         
-    else:
+    #else:
         #If the list IS empty
-        print(response.text)
-    if "--verbose" in user_prompt:
-        print(f"User prompt: {args.prompt}")
-        print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-        print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
+        #print(response.text)
+    #if "--verbose" in user_prompt:
+        #print(f"User prompt: {args.prompt}")
+        #print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
+        #print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
     
-else:
-    print(f"Error: No prompt provided.")
-    sys.exit(1)
+#else:
+   #print(f"Error: No prompt provided.")
+    #sys.exit(1)
